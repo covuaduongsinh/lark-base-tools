@@ -55,10 +55,13 @@ function normalizeLevel(raw: unknown): { key: string; order: number } {
 }
 
 function parseAttendanceStatus(raw: unknown): string {
-  if (!raw) return 'co_mat';
+  if (raw === undefined || raw === null || raw === '') return 'co_mat';
+  if (raw === 1 || raw === '1' || raw === true) return 'co_mat';
+  if (raw === 0 || raw === '0' || raw === false) return 'vang_co_phep';
   const str = String(raw).toLowerCase().trim();
   if (str.includes('không phép') || str.includes('khong phep')) return 'vang_khong_phep';
   if (str.includes('có phép') || str.includes('co phep') || str.includes('vắng') || str.includes('vang')) return 'vang_co_phep';
+  if (str.includes('có mặt') || str.includes('co mat') || str.includes('đủ') || str.includes('present')) return 'co_mat';
   return 'co_mat';
 }
 
@@ -416,8 +419,16 @@ export class NocoEduPgSyncer {
 
       for (const attTable of attendanceTables) {
         for (const rec of attTable.records) {
-          // Link to Student
-          const studentLink = getRecordLink(rec, attTable, ['học viên', 'hocvien', 'student']);
+          // Link to Student (Lark column is usually 'Tên HS' or 'Học viên')
+          const studentLink = getRecordLink(rec, attTable, [
+            'tên hs',
+            'ten hs',
+            'học viên',
+            'hoc vien',
+            'hocvien',
+            'student',
+            'tên học sinh'
+          ]);
           const studentId = studentLink ? studentIdMap.get(studentLink) : null;
 
           if (!studentId) {
@@ -426,15 +437,21 @@ export class NocoEduPgSyncer {
 
           // Link to Class
           let lopId = defaultLopId;
-          const lopLink = getRecordLink(rec, attTable, ['lớp', 'lớp học', 'class']);
+          const lopLink = getRecordLink(rec, attTable, ['lớp', 'lớp học', 'class', 'lop']);
           if (lopLink && classIdMap.has(lopLink)) {
             lopId = classIdMap.get(lopLink) || defaultLopId;
           }
 
           // Date & Time
-          const rawDate = getRecordValue(rec, attTable, ['ngày học', 'ngày', 'date']);
+          const rawDate = getRecordValue(rec, attTable, [
+            'ngày học - day format',
+            'ngày học',
+            'ngay hoc',
+            'ngày',
+            'date'
+          ]);
           const ngay = parseDateToIso(rawDate);
-          const rawCa = getRecordValue(rec, attTable, ['ca học', 'ca', 'shift']);
+          const rawCa = getRecordValue(rec, attTable, ['ca học', 'ca dạy', 'ca', 'shift']);
           const timeInfo = parseSessionTime(rawCa);
 
           // Session Key
@@ -457,12 +474,12 @@ export class NocoEduPgSyncer {
           }
 
           // Attendance details
-          const rawStatus = getRecordValue(rec, attTable, ['điểm danh', 'trạng thái']);
+          const rawStatus = getRecordValue(rec, attTable, ['có mặt', 'co mat', 'điểm danh', 'trạng thái']);
           const status = parseAttendanceStatus(rawStatus);
-          const rawNhanXet = getRecordValue(rec, attTable, ['nhận xét buổi học', 'nhận xét', 'feedback']);
+          const rawNhanXet = getRecordValue(rec, attTable, ['nhận xét', 'nhan xet', 'nhận xét buổi học', 'feedback']);
           const nhanXetStr = rawNhanXet ? String(rawNhanXet).slice(0, 500) : null;
-          const daLamBtvn = Boolean(getRecordValue(rec, attTable, ['làm btvn', 'btvn']) || false);
-          const rawYThuc = getRecordValue(rec, attTable, ['điểm ý thức', 'ý thức']);
+          const daLamBtvn = Boolean(getRecordValue(rec, attTable, ['làm btvn', 'btvn', 'giao btvn']) || false);
+          const rawYThuc = getRecordValue(rec, attTable, ['điểm ý thức', 'ý thức', 'y thuc']);
           const yThucDiem = parseInt(String(rawYThuc || 0), 10) || null;
 
           const attRes = await client.query(
@@ -483,6 +500,13 @@ export class NocoEduPgSyncer {
           else written.diemDanh.updated++;
         }
       }
+
+      addLog({
+        step: 'Sync Điểm Danh Hoàn Tất',
+        status: 'completed',
+        message: `Đã xử lý điểm danh: Thêm mới ${written.diemDanh.inserted}, Cập nhật ${written.diemDanh.updated}, Buổi học tạo mới ${written.buoiHoc.inserted}.`,
+        timestamp: new Date().toISOString()
+      });
 
       // 5. Sync Tuition Packages (edu_goi_hoc)
       if (tableDealHp) {
