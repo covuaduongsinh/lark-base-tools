@@ -110,8 +110,8 @@ function parseDateToIso(rawDate: unknown): string {
 
 function findField(table: LarkTable, keywords: string[]) {
   return table.fields.find(f => {
-    const fName = f.name.toLowerCase();
-    return keywords.some(k => fName.includes(k.toLowerCase()));
+    const fName = f.name.toLowerCase().trim();
+    return keywords.some(k => fName.includes(k.toLowerCase().trim()));
   });
 }
 
@@ -125,7 +125,7 @@ function getRecordText(rec: LarkRecord, table: LarkTable, keywords: string[]): s
   const val = getRecordValue(rec, table, keywords);
   if (val === undefined || val === null) return '';
   if (Array.isArray(val)) {
-    return val.map(v => (typeof v === 'object' && v && 'text' in v ? String(v.text) : String(v))).join(', ');
+    return val.map(v => (typeof v === 'object' && v && 'text' in v ? String((v as Record<string, unknown>).text) : String(v))).join(', ');
   }
   return String(val).trim();
 }
@@ -276,7 +276,47 @@ export class NocoEduPgSyncer {
         classIdMap.set(row.external_id, row.id);
       }
 
-      // 2. Sync Parents (edu_phu_huynh)
+      // Default fallback class for attendance
+      const defaultLopId = classIdMap.values().next().value || 1;
+
+      // 2. Pre-analyze Attendance to deduce each student's current active class (latest session)
+      const latestClassOfStudent = new Map<string, number>(); // Lark studentId -> edu_lop.id
+      const latestDateOfStudent = new Map<string, string>(); // Lark studentId -> ISO date
+
+      for (const attTable of attendanceTables) {
+        for (const rec of attTable.records) {
+          const studentLink = getRecordLink(rec, attTable, [
+            'tên hs',
+            'ten hs',
+            'học viên',
+            'hoc vien',
+            'hocvien',
+            'student',
+            'tên học sinh'
+          ]);
+          if (!studentLink) continue;
+
+          const lopLink = getRecordLink(rec, attTable, ['lớp', 'lớp học', 'class', 'lop']);
+          const rawDate = getRecordValue(rec, attTable, [
+            'ngày học - day format',
+            'ngày học',
+            'ngay hoc',
+            'ngày',
+            'date'
+          ]);
+          const ngay = parseDateToIso(rawDate);
+
+          const curDate = latestDateOfStudent.get(studentLink);
+          if (!curDate || ngay >= curDate) {
+            latestDateOfStudent.set(studentLink, ngay);
+            if (lopLink && classIdMap.has(lopLink)) {
+              latestClassOfStudent.set(studentLink, classIdMap.get(lopLink)!);
+            }
+          }
+        }
+      }
+
+      // 3. Sync Parents (edu_phu_huynh)
       const parentIdMap = new Map<string, number>(); // Lark recordId -> edu_phu_huynh.id
       if (tablePhuHuynh) {
         addLog({
@@ -287,9 +327,9 @@ export class NocoEduPgSyncer {
         });
 
         for (const rec of tablePhuHuynh.records) {
-          let hoTen = getRecordText(rec, tablePhuHuynh, ['họ tên', 'tên', 'name']) || 'Phụ huynh';
+          let hoTen = getRecordText(rec, tablePhuHuynh, ['họ và tên ph contact', 'họ tên', 'tên', 'name']) || 'Phụ huynh';
           if (anonymize) hoTen = anonymizeName(hoTen);
-          const sdt = getRecordText(rec, tablePhuHuynh, ['số điện thoại', 'sđt', 'phone']) || '0900000000';
+          const sdt = getRecordText(rec, tablePhuHuynh, ['số đt', 'số điện thoại', 'sđt', 'phone']) || '0900000000';
           const emailVal = getRecordText(rec, tablePhuHuynh, ['email']);
           const email = emailVal || null;
           const ma = `PH-${rec.id.slice(-6)}`;
@@ -312,7 +352,7 @@ export class NocoEduPgSyncer {
         }
       }
 
-      // 3. Sync Students (edu_hoc_vien)
+      // 4. Sync Students (edu_hoc_vien)
       const studentIdMap = new Map<string, number>(); // Lark recordId -> edu_hoc_vien.id
       if (tableHocVien) {
         addLog({
@@ -323,30 +363,32 @@ export class NocoEduPgSyncer {
         });
 
         for (const rec of tableHocVien.records) {
-          let hoTen = getRecordText(rec, tableHocVien, ['họ và tên', 'họ tên', 'tên học viên', 'name']) || 'Học viên';
+          // In Lark Base, the student name column is 'Học viên'
+          let hoTen = getRecordText(rec, tableHocVien, ['học viên', 'họ và tên', 'họ tên', 'tên học viên', 'name']);
           if (anonymize) hoTen = anonymizeName(hoTen);
+          if (!hoTen) hoTen = 'Học viên';
           
-          const rawBirth = getRecordValue(rec, tableHocVien, ['năm sinh', 'ngày sinh', 'dob']);
+          const rawBirth = getRecordValue(rec, tableHocVien, ['ngày sinh', 'năm sinh', 'dob']);
           const birthInfo = parseBirthYear(rawBirth);
-          const levelInfo = normalizeLevel(getRecordText(rec, tableHocVien, ['level', 'cấp độ']));
+          const levelInfo = normalizeLevel(getRecordText(rec, tableHocVien, ['trình độ hiện tại', 'level', 'cấp độ']));
           
           let coSoId = defaultBranchId;
           const coSoField = getRecordText(rec, tableHocVien, ['cơ sở', 'branch']);
           if (coSoField.includes('2')) coSoId = branchIdMap.get('cơ sở 2') || 2;
           else if (coSoField.includes('1')) coSoId = branchIdMap.get('cơ sở 1') || 1;
 
-          // Find class link
-          let lopId: number | null = null;
-          const lopLink = getRecordLink(rec, tableHocVien, ['lớp', 'lớp học', 'class']);
-          if (lopLink) {
-            lopId = classIdMap.get(lopLink) || null;
+          // Determine student class from their most recent attendance session
+          let lopId: number | null = latestClassOfStudent.get(rec.id) || null;
+          if (!lopId) {
+            const lopLink = getRecordLink(rec, tableHocVien, ['lớp', 'lớp học', 'class']);
+            if (lopLink) lopId = classIdMap.get(lopLink) || null;
           }
 
-          const rawSoBuoi = getRecordValue(rec, tableHocVien, ['số buổi còn lại', 'tồn', 'buổi còn']);
+          const rawSoBuoi = getRecordValue(rec, tableHocVien, ['số buổi tồn update', 'số buổi còn lại', 'tồn']);
           const soBuoiConLai = parseInt(String(rawSoBuoi || 0), 10) || 0;
-          const maText = getRecordText(rec, tableHocVien, ['mã hv', 'mã', 'code']);
+          const maText = getRecordText(rec, tableHocVien, ['id học viên', 'mã hv', 'mã', 'code']);
           const ma = maText || `HS${String(rec.id).replace(/\D/g, '').slice(-5)}` || `HS-${rec.id.slice(-6)}`;
-          const trangThai = getRecordText(rec, tableHocVien, ['trạng thái', 'status']).toLowerCase().includes('thôi') ? 'thoi_hoc' : 'dang_hoc';
+          const trangThai = getRecordText(rec, tableHocVien, ['tình trạng học', 'trạng thái', 'status']).toLowerCase().includes('thôi') ? 'thoi_hoc' : 'dang_hoc';
 
           const res = await client.query(
             `INSERT INTO edu_hoc_vien (
@@ -394,10 +436,7 @@ export class NocoEduPgSyncer {
         studentIdMap.set(row.external_id, row.id);
       }
 
-      // Default fallback class for attendance
-      const defaultLopId = classIdMap.values().next().value || 1;
-
-      // 4. Sync Attendance & Sessions (edu_buoi_hoc & edu_diem_danh)
+      // 5. Sync Attendance & Sessions (edu_buoi_hoc & edu_diem_danh)
       let totalAttendanceRecords = 0;
       for (const attTable of attendanceTables) {
         totalAttendanceRecords += attTable.recordCount;
@@ -410,11 +449,14 @@ export class NocoEduPgSyncer {
         timestamp: new Date().toISOString()
       });
 
-      // Cache existing sessions: `${lopId}|${ngay}|${gioBatDau}` -> sessionId
-      const existingSessions = await client.query('SELECT id, lop_id, ngay, gio_bat_dau FROM edu_buoi_hoc');
+      // Cache existing sessions by external_id and by `${lopId}|${ngay}|${gioBatDau}`
+      const existingSessions = await client.query('SELECT id, lop_id, ngay, gio_bat_dau, external_id FROM edu_buoi_hoc');
       const sessionIdMap = new Map<string, number>();
       for (const row of existingSessions.rows) {
         sessionIdMap.set(`${row.lop_id}|${row.ngay}|${row.gio_bat_dau}`, row.id);
+        if (row.external_id) {
+          sessionIdMap.set(row.external_id, row.id);
+        }
       }
 
       for (const attTable of attendanceTables) {
@@ -454,31 +496,42 @@ export class NocoEduPgSyncer {
           const rawCa = getRecordValue(rec, attTable, ['ca học', 'ca dạy', 'ca', 'shift']);
           const timeInfo = parseSessionTime(rawCa);
 
-          // Session Key
+          // Canonical Lark Session externalId: `lark:buoi:${lopLink}:${ngay}`
+          const buoiExternalKey = lopLink ? `lark:buoi:${lopLink}:${ngay}` : `lark:buoi:${lopId}:${ngay}`;
           const sessionKey = `${lopId}|${ngay}|${timeInfo.gioBatDau}`;
-          let buoiHocId = sessionIdMap.get(sessionKey);
+
+          let buoiHocId = sessionIdMap.get(buoiExternalKey) || sessionIdMap.get(sessionKey);
 
           if (!buoiHocId) {
             const sRes = await client.query(
-              `INSERT INTO edu_buoi_hoc (lop_id, ngay, gio_bat_dau, gio_ket_thuc, loai, trang_thai)
-               VALUES ($1, $2, $3, $4, 'thuong', 'hoan_thanh')
+              `INSERT INTO edu_buoi_hoc (lop_id, ngay, gio_bat_dau, gio_ket_thuc, loai, trang_thai, external_id)
+               VALUES ($1, $2, $3, $4, 'thuong', 'hoan_thanh', $5)
                ON CONFLICT (lop_id, ngay, gio_bat_dau) DO UPDATE SET
-                 gio_ket_thuc = EXCLUDED.gio_ket_thuc
+                 gio_ket_thuc = EXCLUDED.gio_ket_thuc,
+                 external_id = COALESCE(edu_buoi_hoc.external_id, EXCLUDED.external_id)
                RETURNING id, (xmax = 0) AS inserted`,
-              [lopId, ngay, timeInfo.gioBatDau, timeInfo.gioKetThuc]
+              [lopId, ngay, timeInfo.gioBatDau, timeInfo.gioKetThuc, buoiExternalKey]
             );
             buoiHocId = sRes.rows[0].id as number;
+            sessionIdMap.set(buoiExternalKey, buoiHocId);
             sessionIdMap.set(sessionKey, buoiHocId);
             if (sRes.rows[0].inserted) written.buoiHoc.inserted++;
             else written.buoiHoc.updated++;
           }
 
-          // Attendance details
+          // Attendance details: status
           const rawStatus = getRecordValue(rec, attTable, ['có mặt', 'co mat', 'điểm danh', 'trạng thái']);
           const status = parseAttendanceStatus(rawStatus);
-          const rawNhanXet = getRecordValue(rec, attTable, ['nhận xét', 'nhan xet', 'nhận xét buổi học', 'feedback']);
+
+          // Homework: Lark column 'Làm BTVN' (1 = done, 0 = not done)
+          const rawBtvn = getRecordValue(rec, attTable, ['làm btvn', 'lam btvn', 'btvn', 'bài tập']);
+          const daLamBtvn = rawBtvn === 1 || rawBtvn === '1' || rawBtvn === true;
+
+          // Short feedback / comment: Lark column 'Nhận xét'
+          const rawNhanXet = getRecordValue(rec, attTable, ['nhận xét', 'nhan xet', 'nhận xét buổi học', 'feedback', 'nhận xét ngắn']);
           const nhanXetStr = rawNhanXet ? String(rawNhanXet).slice(0, 500) : null;
-          const daLamBtvn = Boolean(getRecordValue(rec, attTable, ['làm btvn', 'btvn', 'giao btvn']) || false);
+
+          // Mindfulness score: Lark column 'Ý thức'
           const rawYThuc = getRecordValue(rec, attTable, ['điểm ý thức', 'ý thức', 'y thuc']);
           const yThucDiem = parseInt(String(rawYThuc || 0), 10) || null;
 
@@ -491,7 +544,8 @@ export class NocoEduPgSyncer {
                trang_thai = EXCLUDED.trang_thai,
                da_lam_btvn = EXCLUDED.da_lam_btvn,
                nhan_xet = EXCLUDED.nhan_xet,
-               y_thuc_diem = EXCLUDED.y_thuc_diem
+               y_thuc_diem = EXCLUDED.y_thuc_diem,
+               buoi_hoc_id = EXCLUDED.buoi_hoc_id
              RETURNING id, (xmax = 0) AS inserted`,
             [buoiHocId, studentId, status, daLamBtvn, nhanXetStr, rec.id, yThucDiem]
           );
@@ -508,7 +562,7 @@ export class NocoEduPgSyncer {
         timestamp: new Date().toISOString()
       });
 
-      // 5. Sync Tuition Packages (edu_goi_hoc)
+      // 6. Sync Tuition Packages (edu_goi_hoc)
       if (tableDealHp) {
         addLog({
           step: 'Sync Gói Học',
@@ -523,12 +577,12 @@ export class NocoEduPgSyncer {
 
           if (!studentId) continue;
 
-          const rawSoBuoi = getRecordValue(rec, tableDealHp, ['số buổi', 'buổi']);
+          const rawSoBuoi = getRecordValue(rec, tableDealHp, ['số buổi nộp', 'số buổi', 'buổi']);
           const soBuoi = parseInt(String(rawSoBuoi || 10), 10) || 10;
           const rawTien = getRecordText(rec, tableDealHp, ['tổng tiền', 'thành tiền', 'số tiền']);
           const thanhTien = parseInt(rawTien.replace(/\D/g, ''), 10) || 0;
           const donGia = soBuoi > 0 ? Math.round(thanhTien / soBuoi) : 0;
-          const rawNgayMua = getRecordValue(rec, tableDealHp, ['ngày bắt đầu', 'ngày nộp', 'date']);
+          const rawNgayMua = getRecordValue(rec, tableDealHp, ['ngày nộp hp', 'ngày bắt đầu', 'ngày nộp', 'date']);
           const ngayMua = parseDateToIso(rawNgayMua);
 
           const res = await client.query(
