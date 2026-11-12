@@ -860,13 +860,39 @@ export class NocoEduPgSyncer {
           existingSoduStudents.add(Number(r.hoc_vien_id));
         }
 
+        // Students whose attendance was already recorded under opening balance without deduction (diemDanhCuKhongTru)
+        const existingHistoryStudents = new Set<number>();
+        const histRes = await client.query(
+          `SELECT DISTINCT hoc_vien_id FROM edu_diem_danh WHERE external_id IS NOT NULL AND tinh_vao_so_du = false`
+        );
+        for (const r of histRes.rows) {
+          existingHistoryStudents.add(Number(r.hoc_vien_id));
+        }
+
+        const existingDealStudents = new Set<number>();
+        const dealRes = await client.query(
+          `SELECT DISTINCT hoc_vien_id FROM edu_goi_hoc WHERE external_id LIKE 'lark:deal:%' AND id IN (SELECT goi_hoc_id FROM edu_so_du_nhat_ky WHERE goi_hoc_id IS NOT NULL)`
+        );
+        for (const r of dealRes.rows) {
+          existingDealStudents.add(Number(r.hoc_vien_id));
+        }
+
+        // Remove any unlogged deal packages that belong to history students
+        await client.query(`
+          DELETE FROM edu_goi_hoc
+          WHERE external_id LIKE 'lark:deal:%'
+            AND id NOT IN (SELECT goi_hoc_id FROM edu_so_du_nhat_ky WHERE goi_hoc_id IS NOT NULL)
+            AND hoc_vien_id IN (SELECT DISTINCT hoc_vien_id FROM edu_diem_danh WHERE external_id IS NOT NULL AND tinh_vao_so_du = false)
+        `);
+
         for (const rec of tableDealHp.records) {
           const studentKey = getRecordLink(rec, tableDealHp, ['học viên']);
           const studentId = studentKey ? studentIdMap.get(studentKey) : null;
           if (!studentId || !studentKey || !validStudentKeys.has(studentKey)) continue;
 
-          // Skip if student already holds an opening balance package (lark:sodu:*)
+          // Skip if student already holds an opening balance package (lark:sodu:*) or history attendance without deal packages
           if (existingSoduStudents.has(studentId)) continue;
+          if (existingHistoryStudents.has(studentId) && !existingDealStudents.has(studentId)) continue;
 
           const paidVal = getRecordValue(rec, tableDealHp, ['đã nộp']);
           const paid = Number(paidVal || 0) > 0;
@@ -904,7 +930,14 @@ export class NocoEduPgSyncer {
         }
       }
 
-      // 7. Reconcile student balances (so_buoi_con_lai) from edu_so_du_nhat_ky ledger
+      // 7. Remove parents that have no linked valid students (matching ke-hoach.ts usedParents filter)
+      await client.query(`
+        DELETE FROM edu_phu_huynh
+        WHERE external_id LIKE 'lark:%'
+          AND id NOT IN (SELECT phu_huynh_id FROM edu_hoc_vien_phu_huynh)
+      `);
+
+      // 8. Reconcile student balances (so_buoi_con_lai) from edu_so_du_nhat_ky ledger
       await client.query(`
         UPDATE edu_hoc_vien h
         SET so_buoi_con_lai = COALESCE(
