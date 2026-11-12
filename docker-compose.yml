@@ -1,0 +1,26 @@
+services:
+  lark-base-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lark-base-etl
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Internal Docker network connection to NocoBase 3 container on Dokploy
+      - NOCOBASE_URL=${NOCOBASE_URL:-http://nocoedu:13000}
+      - NOCOBASE_API_KEY=${NOCOBASE_API_KEY:-}
+      # Security: Basic Auth credentials (or Cloudflare Zero Trust header bypass)
+      - AUTH_USER=${AUTH_USER:-admin}
+      - AUTH_PASS=${AUTH_PASS:-admin_secure_pass_123}
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    name: dokploy-network
+    external: true

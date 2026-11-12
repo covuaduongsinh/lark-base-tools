@@ -21,6 +21,12 @@
 - **So sánh phiên bản (`diff`):** So sánh khác biệt về cấu trúc bảng, cột thêm/bớt, đổi kiểu dữ liệu và biến động số lượng bản ghi giữa 2 lần xuất `.base`.
 - **Bảo mật tuyệt đối:** 100% test sử dụng dữ liệu giả tự sinh bằng generator (`buildFixture`). Không chứa bất kỳ dữ liệu thật nào trong kho mã nguồn.
 
+- **Cổng Web ETL & Tự Động Hóa NocoEdu (`packages/server`):**
+  - Web UI tối giản: Kéo thả file `.base` -> xem tóm tắt inspect trực quan -> **nút 1 chạm "Tự động đẩy sang NocoEdu"**.
+  - Tự động gọi NocoBase 3 REST API để sinh Collections, Fields, Associations và batch insert dữ liệu học viên, lớp học, giáo viên, điểm danh (gộp 3 bảng 2024-2026), hợp đồng học phí theo đúng mô hình giáo dục.
+  - Tải nhanh bản sao lưu đã ẩn danh hóa (CSV, SQLite, JSON).
+  - Tối ưu đóng gói Docker multi-stage trên Node 22 Alpine (< 150MB) và tích hợp sẵn sàng mạng nội bộ Dokploy cùng Basic Auth / Cloudflare Zero Trust.
+
 ---
 
 ### 2. Cài Đặt & Sử Dụng
@@ -33,9 +39,22 @@ pnpm install
 # Build mã nguồn TypeScript
 pnpm run build
 
-# Chạy kiểm thử tự động
+# Chạy kiểm thử tự động (TDD)
 pnpm test
+
+# Khởi chạy Web UI & REST API ETL Server nội bộ (Port 3000)
+pnpm --filter @duongsinh/lark-base-server start
 ```
+
+#### Triển khai Docker & Dokploy:
+```bash
+# Khởi chạy container bằng Docker Compose
+docker compose up -d
+
+# Xem log kiểm tra kết nối với NocoBase
+docker compose logs -f
+```
+Xem hướng dẫn chi tiết tại [docs/dokploy-deployment.md](docs/dokploy-deployment.md).
 
 #### Hướng dẫn CLI:
 
@@ -79,10 +98,16 @@ node packages/cli/bin/lark-base.js diff "path/to/original.base" "path/to/updated
 lark-base-tools/
 ├── packages/
 │   ├── core/              # @duongsinh/lark-base-core (parser, formula translator, mock builder)
-│   └── cli/               # lark-base CLI (inspect, schema, export, diff)
+│   ├── cli/               # lark-base CLI (inspect, schema, export, diff)
+│   └── server/            # @duongsinh/lark-base-server (Hono Web UI & REST API ETL service)
 ├── docs/
 │   ├── format.md          # Technical specification of decoded .base format & field types
-│   └── map-nocoedu.md     # Architectural mapping guide to NocoEdu (NocoBase 3)
+│   ├── map-nocoedu.md     # Architectural mapping guide to NocoEdu (NocoBase 3)
+│   ├── dokploy-deployment.md # Complete deployment guide for Dokploy & Docker internal network
+│   └── plans/
+│       └── automation-roadmap.md # Zero-manual automation roadmap
+├── Dockerfile             # Multi-stage build optimized for Node 22 Alpine (< 150MB)
+├── docker-compose.yml     # Dokploy internal bridge & env configurations
 ├── .github/workflows/
 │   └── ci.yml             # GitHub Actions CI workflow
 ├── pnpm-workspace.yaml

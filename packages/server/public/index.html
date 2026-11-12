@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lark Base → NocoEdu Migration Portal</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 2rem 1rem; line-height: 1.5; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 2rem; }
+    header h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    header p { color: var(--text-muted); font-size: 0.95rem; }
+
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
+    .card h2 { font-size: 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+
+    /* Dropzone */
+    .dropzone {
+      border: 2px dashed #475569;
+      border-radius: 12px;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(30, 41, 59, 0.5);
+    }
+    .dropzone:hover, .dropzone.dragover { border-color: var(--primary); background: rgba(59, 130, 246, 0.1); }
+    .dropzone svg { width: 48px; height: 48px; fill: var(--primary); margin-bottom: 1rem; }
+    .dropzone p { color: var(--text-muted); font-size: 0.95rem; }
+    .dropzone strong { color: var(--text); }
+    input[type="file"] { display: none; }
+
+    /* Stats Grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .stat-box { background: rgba(15, 23, 42, 0.6); padding: 1rem; border-radius: 8px; border: 1px solid var(--card-border); text-align: center; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; color: #60a5fa; }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-top: 0.25rem; }
+
+    /* Tables preview */
+    .table-responsive { max-height: 280px; overflow-y: auto; margin-top: 1rem; border-radius: 6px; border: 1px solid var(--card-border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--card-border); }
+    th { background: #0f172a; position: sticky; top: 0; color: var(--text-muted); }
+    tr:hover { background: rgba(255, 255, 255, 0.02); }
+    .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .badge-success { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .badge-danger { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .badge-info { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+
+    /* Inputs */
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      background: #0f172a;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--primary); }
+    .form-inline { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s ease;
+      color: #fff;
+    }
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); }
+    .btn-secondary { background: #475569; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .actions-bar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; margin-top: 1.5rem; }
+
+    /* Progress & Logs */
+    .progress-bar-container { width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; margin: 1rem 0; display: none; }
+    .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), var(--success)); transition: width 0.3s; }
+    .log-box { background: #0b1120; border: 1px solid var(--card-border); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto; color: #a5b4fc; display: none; }
+    .log-entry { margin-bottom: 0.35rem; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Lark Base $\rightarrow$ NocoEdu Migration Portal</h1>
+      <p>Hệ thống tự động phân tích và chuyển đổi dữ liệu Lark Base sang NocoBase 3 trên hạ tầng VPS Dokploy</p>
+    </header>
+
+    <!-- Upload Card -->
+    <div class="card">
+      <h2>📁 1. Tải Lên File Lark Base (.base)</h2>
+      <div class="dropzone" id="dropzone">
+        <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <p><strong>Kéo thả file .base vào đây</strong> hoặc nhấn để duyệt file</p>
+        <p style="font-size: 0.8rem; margin-top: 0.5rem; color: #64748b;">Hỗ trợ phân tích nén gzip, giải mã cell và trích xuất quan hệ</p>
+        <input type="file" id="fileInput" accept=".base,.json">
+      </div>
+    </div>
+
+    <!-- Inspect Card (Hidden until uploaded) -->
+    <div class="card hidden" id="inspectCard">
+      <h2>🔍 2. Tóm Tắt Phân Tích & Chuẩn Hóa Schema</h2>
+      <div id="baseInfoText" style="color: var(--text-muted); font-size: 0.9rem;"></div>
+      
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-value" id="statTotalTables">0</div>
+          <div class="stat-label">Tổng Bảng</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="statTotalRecords">0</div>
+          <div class="stat-label">Tổng Bản Ghi</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="statMergedTables" style="color: #34d399;">0</div>
+          <div class="stat-label">Gộp Điểm Danh</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="statIgnoredTables" style="color: #f87171;">0</div>
+          <div class="stat-label">Bảng Bỏ Qua</div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Tên Bảng Trong Lark</th>
+              <th>Số Dòng</th>
+              <th>Số Cột</th>
+              <th>Bảng Đích NocoEdu</th>
+              <th>Trạng Thái Chuẩn Hóa</th>
+            </tr>
+          </thead>
+          <tbody id="tablesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Migration Config Card (Hidden until uploaded) -->
+    <div class="card hidden" id="configCard">
+      <h2>🚀 3. Đẩy Dữ Liệu Sang NocoEdu (Dokploy)</h2>
+      <div class="form-inline">
+        <div class="form-group">
+          <label for="nocobaseUrl">NocoBase 3 REST API Endpoint:</label>
+          <input type="text" id="nocobaseUrl" value="http://localhost:13000" placeholder="http://nocoedu:13000 hoặc https://nocoedu.yourdomain.com">
+        </div>
+        <div class="form-group">
+          <label for="nocobaseApiKey">API Key (Tùy chọn):</label>
+          <input type="password" id="nocobaseApiKey" placeholder="Nhập API Key NocoBase">
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 1rem; align-items: center; margin: 0.75rem 0;">
+        <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--text);">
+          <input type="checkbox" id="chkAnonymize" checked> Ẩn danh hóa thông tin cá nhân (Họ tên, SĐT, Email)
+        </label>
+        <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--text);">
+          <input type="checkbox" id="chkDryRun"> Chế độ thử nghiệm (Dry-Run / Không ghi DB)
+        </label>
+      </div>
+
+      <div class="progress-bar-container" id="progressContainer">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+
+      <div class="log-box" id="logBox"></div>
+
+      <div class="actions-bar">
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" id="btnExportJson">📥 Tải JSON</button>
+          <button class="btn btn-secondary" id="btnExportSqlite">🗄️ Tải SQLite</button>
+          <button class="btn btn-secondary" id="btnExportCsv">📄 Tải CSV</button>
+        </div>
+        <button class="btn btn-primary" id="btnMigrate">⚡ 1 Chạm: Tự Động Đẩy Sang NocoEdu</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUploadId = null;
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const inspectCard = document.getElementById('inspectCard');
+    const configCard = document.getElementById('configCard');
+    const btnMigrate = document.getElementById('btnMigrate');
+    const btnExportJson = document.getElementById('btnExportJson');
+    const btnExportSqlite = document.getElementById('btnExportSqlite');
+    const btnExportCsv = document.getElementById('btnExportCsv');
+    const logBox = document.getElementById('logBox');
+    const progressBar = document.getElementById('progressBar');
+    const progressContainer = document.getElementById('progressContainer');
+
+    // Fetch initial config from server
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => {
+        if (cfg.defaultNocobaseUrl) {
+          document.getElementById('nocobaseUrl').value = cfg.defaultNocobaseUrl;
+        }
+      })
+      .catch(() => {});
+
+    // Dropzone handlers
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        handleUpload(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        handleUpload(fileInput.files[0]);
+      }
+    });
+
+    async function handleUpload(file) {
+      dropzone.innerHTML = `<p>⏳ Đang tải lên và phân tích <strong>${file.name}</strong>...</p>`;
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload thất bại');
+
+        currentUploadId = data.uploadId;
+        renderInspect(data);
+      } catch (err) {
+        alert('Lỗi: ' + err.message);
+        dropzone.innerHTML = `<p>❌ Lỗi khi phân tích. Nhấn vào đây để thử lại.</p>`;
+      }
+    }
+
+    function renderInspect(data) {
+      inspectCard.classList.remove('hidden');
+      configCard.classList.remove('hidden');
+
+      document.getElementById('baseInfoText').innerText = `Base: "${data.baseName}" (ID: ${data.baseId}) - File: ${data.fileName} (${(data.fileSize / 1024).toFixed(1)} KB)`;
+      document.getElementById('statTotalTables').innerText = data.totalTables;
+      document.getElementById('statTotalRecords').innerText = data.totalRecords.toLocaleString();
+      document.getElementById('statMergedTables').innerText = data.mergedCount;
+      document.getElementById('statIgnoredTables').innerText = data.ignoredCount;
+
+      const tbody = document.getElementById('tablesTbody');
+      tbody.innerHTML = '';
+
+      data.tables.forEach(t => {
+        const tr = document.createElement('tr');
+        let statusBadge = '<span class="badge badge-info">Map 1-1</span>';
+        if (t.isIgnored) {
+          statusBadge = '<span class="badge badge-danger">Loại bỏ (Lưu trữ/Mẫu)</span>';
+        } else if (t.isMerged) {
+          statusBadge = '<span class="badge badge-success">Gộp vào attendances_feedbacks</span>';
+        }
+
+        tr.innerHTML = `
+          <td><strong>${t.name}</strong> <span style="font-size:0.75rem; color:#64748b;">(${t.id})</span></td>
+          <td>${t.recordCount.toLocaleString()}</td>
+          <td>${t.fieldCount}</td>
+          <td><code>${t.targetCollection || (t.isIgnored ? '-' : 'tự động')}</code></td>
+          <td>${statusBadge}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      inspectCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Migrate Action
+    btnMigrate.addEventListener('click', async () => {
+      if (!currentUploadId) return;
+
+      const nocobaseUrl = document.getElementById('nocobaseUrl').value.trim();
+      const nocobaseApiKey = document.getElementById('nocobaseApiKey').value.trim();
+      const anonymize = document.getElementById('chkAnonymize').checked;
+      const dryRun = document.getElementById('chkDryRun').checked;
+
+      btnMigrate.disabled = true;
+      btnMigrate.innerText = '⚡ Đang thực thi...';
+      progressContainer.style.display = 'block';
+      progressBar.style.width = '20%';
+      logBox.style.display = 'block';
+      logBox.innerHTML = '<div class="log-entry">🚀 Khởi động pipeline ETL sang NocoEdu...</div>';
+
+      try {
+        progressBar.style.width = '45%';
+        const res = await fetch('/api/migrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uploadId: currentUploadId,
+            nocobaseUrl,
+            nocobaseApiKey,
+            anonymize,
+            dryRun
+          })
+        });
+
+        const result = await res.json();
+        progressBar.style.width = '100%';
+
+        if (!res.ok) {
+          throw new Error(result.error || 'Quá trình di chuyển gặp lỗi');
+        }
+
+        // Render logs
+        logBox.innerHTML = '';
+        result.logs.forEach(l => {
+          const div = document.createElement('div');
+          div.className = 'log-entry';
+          div.innerHTML = `[${l.timestamp.split('T')[1].slice(0, 8)}] <strong>${l.step}:</strong> ${l.message}`;
+          logBox.appendChild(div);
+        });
+
+        btnMigrate.innerText = '✅ Hoàn tất thành công!';
+        alert(`Chúc mừng! Đã chuyển đổi thành công ${result.totalRecordsProcessed} bản ghi vào ${result.collectionsCreated.length} collections của NocoEdu!`);
+      } catch (err) {
+        logBox.innerHTML += `<div class="log-entry" style="color:#ef4444;">❌ Lỗi: ${err.message}</div>`;
+        btnMigrate.innerText = '❌ Thử lại';
+        alert('Lỗi: ' + err.message);
+      } finally {
+        btnMigrate.disabled = false;
+      }
+    });
+
+    // Export Handlers
+    btnExportJson.addEventListener('click', () => {
+      if (!currentUploadId) return;
+      window.open(`/api/export/${currentUploadId}?format=json`, '_blank');
+    });
+
+    btnExportSqlite.addEventListener('click', () => {
+      if (!currentUploadId) return;
+      window.open(`/api/export/${currentUploadId}?format=sqlite`, '_blank');
+    });
+
+    btnExportCsv.addEventListener('click', () => {
+      if (!currentUploadId) return;
+      window.open(`/api/export/${currentUploadId}?format=csv&collection=students`, '_blank');
+    });
+  </script>
+</body>
+</html>

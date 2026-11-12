@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.git
+.github
+*.log
+dist
+**/dist
+.pnpm-store
+export
+*.sqlite
+.env
+.env.local
