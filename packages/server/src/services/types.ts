@@ -41,6 +41,8 @@ export interface MigrationResult {
   collectionsCreated: string[];
   fieldsCreated: number;
   recordsInserted: Record<string, number>;
+  totalInserted?: number;
+  totalUpdated?: number;
   ignoredTables: Array<{ id: string; name: string; reason: string }>;
   mergedTables: {
     target: string;
@@ -54,6 +56,8 @@ export interface MigrationResult {
 export interface MigrationOptions {
   nocobaseUrl?: string;
   nocobaseApiKey?: string;
+  databaseUrl?: string;
+  mode?: 'edu_tables' | 'nocobase_collections';
   dryRun?: boolean;
   anonymize?: boolean;
 }

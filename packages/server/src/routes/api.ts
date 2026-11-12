@@ -104,6 +104,8 @@ apiRouter.post('/migrate', async (c) => {
     const result = await MigrationEngine.run(upload.parsedResult, {
       nocobaseUrl: body.nocobaseUrl,
       nocobaseApiKey: body.nocobaseApiKey,
+      databaseUrl: body.databaseUrl,
+      mode: body.mode || 'edu_tables',
       dryRun: Boolean(body.dryRun),
       anonymize: body.anonymize !== false
     });

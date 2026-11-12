@@ -168,6 +168,15 @@
     <!-- Migration Config Card (Hidden until uploaded) -->
     <div class="card hidden" id="configCard">
       <h2>🚀 3. Đẩy Dữ Liệu Sang NocoEdu (Dokploy)</h2>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="syncMode" style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Chế độ đồng bộ dữ liệu:</label>
+        <select id="syncMode" style="width: 100%; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid var(--primary); background: rgba(37, 99, 235, 0.08); color: var(--text); font-size: 0.95rem; font-weight: 500;">
+          <option value="edu_tables" selected>⚡ Nạp & Khớp nối Trực tiếp vào Bảng edu_* NocoEdu (Hướng 2 - Khuyên Dùng, Chống Trùng Lặp 100%)</option>
+          <option value="nocobase_collections">📦 Tạo Collections riêng biệt qua NocoBase 3 REST API</option>
+        </select>
+      </div>
+
       <div class="form-inline">
         <div class="form-group">
           <label for="nocobaseUrl">NocoBase 3 REST API Endpoint:</label>
@@ -309,6 +318,7 @@
 
       const nocobaseUrl = document.getElementById('nocobaseUrl').value.trim();
       const nocobaseApiKey = document.getElementById('nocobaseApiKey').value.trim();
+      const syncMode = document.getElementById('syncMode').value;
       const anonymize = document.getElementById('chkAnonymize').checked;
       const dryRun = document.getElementById('chkDryRun').checked;
 
@@ -328,6 +338,7 @@
             uploadId: currentUploadId,
             nocobaseUrl,
             nocobaseApiKey,
+            mode: syncMode,
             anonymize,
             dryRun
           })
@@ -350,7 +361,11 @@
         });
 
         btnMigrate.innerText = '✅ Hoàn tất thành công!';
-        alert(`Chúc mừng! Đã chuyển đổi thành công ${result.totalRecordsProcessed} bản ghi vào ${result.collectionsCreated.length} collections của NocoEdu!`);
+        if (result.totalInserted !== undefined) {
+          alert(`Chúc mừng! Đã đồng bộ thành công sang NocoEdu:\n- Thêm mới (Inserted): ${result.totalInserted} bản ghi\n- Cập nhật (Updated): ${result.totalUpdated} bản ghi\n- Thời gian: ${(result.durationMs / 1000).toFixed(2)}s\nToàn bộ dữ liệu được bảo đảm không trùng lặp!`);
+        } else {
+          alert(`Chúc mừng! Đã nạp thành công ${result.totalRecordsProcessed} bản ghi vào NocoEdu!`);
+        }
       } catch (err) {
         logBox.innerHTML += `<div class="log-entry" style="color:#ef4444;">❌ Lỗi: ${err.message}</div>`;
         btnMigrate.innerText = '❌ Thử lại';

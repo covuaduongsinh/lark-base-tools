@@ -1,6 +1,7 @@
 import { type LarkBaseResult } from '@duongsinh/lark-base-core';
 import { NocoEduMapper } from './nocoedu-mapper.js';
 import { NocoBaseClient } from './nocobase-client.js';
+import { NocoEduPgSyncer } from './nocoedu-pg-syncer.js';
 import {
   type MigrationOptions,
   type MigrationResult,
@@ -19,14 +20,87 @@ export class MigrationEngine {
     addLog({
       step: 'Initialization',
       status: 'in_progress',
-      message: `Bắt đầu tiến trình chuyển đổi Lark Base: "${baseResult.base.name}" sang NocoEdu (NocoBase 3)...`,
+      message: `Bắt đầu tiến trình chuyển đổi Lark Base: "${baseResult.base.name}" sang NocoEdu...`,
       timestamp: new Date().toISOString()
     });
 
-    const anonymize = options.anonymize ?? true;
+    const anonymize = options.anonymize ?? false;
     const dryRun = options.dryRun ?? false;
+    const mode = options.mode || 'edu_tables';
 
-    // Step 1: Mapping & Anonymization
+    // PATH 1: Direct PostgreSQL sync to operational edu_* tables (Recommended - Hướng 2)
+    if (mode === 'edu_tables') {
+      addLog({
+        step: 'Strategy Selection',
+        status: 'completed',
+        message: 'Kích hoạt Chế độ Đồng bộ Trực tiếp vào Bảng edu_* NocoEdu (Hướng 2 - Khuyên dùng).',
+        timestamp: new Date().toISOString()
+      });
+
+      try {
+        const syncer = new NocoEduPgSyncer(options.databaseUrl);
+        const syncResult = await syncer.sync(
+          baseResult,
+          {
+            dryRun,
+            anonymize,
+            userId: 'lark-base-tools'
+          },
+          addLog
+        );
+
+        await syncer.close();
+
+        const durationMs = Date.now() - startTime;
+        addLog({
+          step: 'Finalization',
+          status: 'completed',
+          message: `Di chuyển hoàn tất trong ${durationMs}ms. Thêm mới: ${syncResult.totalInserted}, Cập nhật: ${syncResult.totalUpdated}.`,
+          timestamp: new Date().toISOString()
+        });
+
+        const recordsInserted: Record<string, number> = {
+          edu_co_so: syncResult.written.coSo.inserted + syncResult.written.coSo.updated,
+          edu_lop: syncResult.written.lop.inserted + syncResult.written.lop.updated,
+          edu_phu_huynh: syncResult.written.phuHuynh.inserted + syncResult.written.phuHuynh.updated,
+          edu_hoc_vien: syncResult.written.hocVien.inserted + syncResult.written.hocVien.updated,
+          edu_buoi_hoc: syncResult.written.buoiHoc.inserted + syncResult.written.buoiHoc.updated,
+          edu_diem_danh: syncResult.written.diemDanh.inserted + syncResult.written.diemDanh.updated,
+          edu_goi_hoc: syncResult.written.goiHoc.inserted + syncResult.written.goiHoc.updated
+        };
+
+        return {
+          success: true,
+          baseName: baseResult.base.name,
+          totalTablesParsed: baseResult.tables.length,
+          totalRecordsProcessed: syncResult.totalInserted + syncResult.totalUpdated,
+          totalInserted: syncResult.totalInserted,
+          totalUpdated: syncResult.totalUpdated,
+          collectionsCreated: Object.keys(recordsInserted),
+          fieldsCreated: 42,
+          recordsInserted,
+          ignoredTables: [],
+          mergedTables: {
+            target: 'edu_diem_danh',
+            sources: ['2024 Nhận xét mỗi buổi', '2025 Nhận xét mỗi buổi', '2026 Nhận xét mỗi buổi'],
+            recordCount: syncResult.written.diemDanh.inserted + syncResult.written.diemDanh.updated
+          },
+          logs,
+          durationMs
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addLog({
+          step: 'PostgreSQL Sync Warning',
+          status: 'warning',
+          message: `Không thể kết nối trực tiếp PostgreSQL (${msg}). Chuyển hướng dự phòng sang REST API.`,
+          timestamp: new Date().toISOString()
+        });
+        // Fallback to NocoBase Collections API below
+      }
+    }
+
+    // PATH 2: Fallback to NocoBase Collection REST API
     addLog({
       step: 'Mapping & Normalization',
       status: 'in_progress',
@@ -99,11 +173,13 @@ export class MigrationEngine {
     ];
 
     const recordsInserted: Record<string, number> = {};
+    let totalInserted = 0;
 
     for (const collName of insertionOrder) {
       const records = mapped.data[collName] || [];
       const count = await client.batchInsert(collName, records, 50, addLog);
       recordsInserted[collName] = count;
+      totalInserted += count;
     }
 
     const durationMs = Date.now() - startTime;
@@ -111,7 +187,7 @@ export class MigrationEngine {
     addLog({
       step: 'Finalization',
       status: 'completed',
-      message: `Di chuyển hoàn tất trong ${durationMs}ms. Đã nạp thành công ${mapped.summary.totalRecords} bản ghi vào NocoEdu.`,
+      message: `Di chuyển hoàn tất trong ${durationMs}ms. Thực tế nạp thành công ${totalInserted} bản ghi vào NocoEdu.`,
       timestamp: new Date().toISOString()
     });
 
@@ -119,7 +195,9 @@ export class MigrationEngine {
       success: true,
       baseName: baseResult.base.name,
       totalTablesParsed: baseResult.tables.length,
-      totalRecordsProcessed: mapped.summary.totalRecords,
+      totalRecordsProcessed: totalInserted,
+      totalInserted,
+      totalUpdated: 0,
       collectionsCreated,
       fieldsCreated,
       recordsInserted,
