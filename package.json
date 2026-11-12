@@ -1,0 +1,20 @@
+{
+  "name": "lark-base-tools-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tools to inspect, decode, schema-map and export Lark Base (.base) files to NocoBase and other relational systems",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter \"./packages/*\" run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "pnpm --filter \"./packages/*\" run lint",
+    "license-check": "pnpm licenses list"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

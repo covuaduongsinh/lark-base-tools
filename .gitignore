@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Sensitive and data files
+*.base
+*.sqlite
+*.db
+*.csv
+output/
+export/
+exports/
+scratch/
+temp/
+tmp/
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
