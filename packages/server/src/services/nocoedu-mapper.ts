@@ -262,7 +262,7 @@ export class NocoEduMapper {
 
     if (studentTable) {
       for (const rec of studentTable.records) {
-        let studentName = this.getRecordText(rec, studentTable, ['họ và tên', 'tên học viên', 'tên']);
+        let studentName = this.getRecordText(rec, studentTable, ['học viên', 'họ và tên', 'tên học viên', 'tên']);
         let parentName = this.getRecordText(rec, studentTable, ['tên phụ huynh', 'phụ huynh', 'tên ph', 'mẹ', 'bố']);
         let phone = this.getRecordText(rec, studentTable, ['điện thoại', 'sđt', 'phone', 'số đt ph']);
         let email = this.getRecordText(rec, studentTable, ['email', 'thư điện tử']);
@@ -664,10 +664,17 @@ export class NocoEduMapper {
   }
 
   private static findField(table: LarkTable, keywords: string[]) {
-    return table.fields.find(f => {
-      const fName = f.name.toLowerCase();
-      return keywords.some(k => fName.includes(k.toLowerCase()));
-    });
+    for (const k of keywords) {
+      const target = k.toLowerCase().trim();
+      const exact = table.fields.find(f => f.name.toLowerCase().trim() === target);
+      if (exact) return exact;
+    }
+    for (const k of keywords) {
+      const target = k.toLowerCase().trim();
+      const partial = table.fields.find(f => f.name.toLowerCase().trim().includes(target));
+      if (partial) return partial;
+    }
+    return undefined;
   }
 
   private static normalizeAttendanceStatus(raw: unknown): string {

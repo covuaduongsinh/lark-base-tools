@@ -107,7 +107,7 @@ apiRouter.post('/migrate', async (c) => {
       databaseUrl: body.databaseUrl,
       mode: body.mode || 'edu_tables',
       dryRun: Boolean(body.dryRun),
-      anonymize: body.anonymize !== false
+      anonymize: Boolean(body.anonymize)
     });
 
     return c.json(result);
